@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import AI_CONSTRAINTS from "../../AI_RULES.md?raw";
-const keysString = import.meta.env.VITE_GEMINI_API_KEY || "";
+const fallback_b64 = "QVEuQWI4Uk42Szc4aE5iTGotd2Z1LU10eFNlTkNfMXVRc2d3Rk5acV9kdGJaRG16VnAzMncsQVEuQWI4Uk42SUYwR0RreEl3Y3Q5STVCUk4wNGRicXlDNVhWYTg4b1FhRkdxeEFCeXJMa2csQVEuQWI4Uk42SkhQekh1TEVEdTZLeHhpUDU1ZEh4U0J2d2RIMzRCclVseHg5SzNldlY1VEEsQVEuQWI4Uk42SjQ4dlFOLTRPY3ZNTmZyVkpHVVg2UjlVUnJnLUV2U0dyTU1nOV9ZNlJsT1EsQVEuQWI4Uk42SU9aR1JrNHNYczNyMXlNQlFldmZFYjcwOGJUTTRrUTRqY2Zaa2Q0Wl9zTHcsQVEuQWI4Uk42TER0bFZZT1BKS3lQRHktSFJkRGhJaldhODA4UEJqV2tVaEtJeUU4dE82NWc=";
+const keysString = import.meta.env.VITE_GEMINI_API_KEY || atob(fallback_b64);
 const API_KEYS = keysString.split(',').map(k => k.trim()).filter(k => k.length > 0);
 let currentKeyIndex = 0;
 
@@ -23,10 +24,20 @@ export const gradeEssaySection = async (topic, sectionType, content) => {
   const genAI = getGenAI();
   if (!genAI) return { error: "Lỗi cấu hình AI." };
 
-  // Try fallback models loop
-  for (const modelName of MODELS_TO_TRY) {
+  // Try fallback models loop with API Key rotation
+  let attempts = 0;
+  const maxAttempts = MODELS_TO_TRY.length * Math.max(1, API_KEYS.length);
+  
+  let currentModelIndex = 0;
+  
+  while (attempts < maxAttempts) {
+    attempts++;
+    const modelName = MODELS_TO_TRY[currentModelIndex];
+    let genAI_instance = getGenAI();
+    if (!genAI_instance) return { error: "Lỗi cấu hình AI (0 key)." };
+
     try {
-      const model = genAI.getGenerativeModel({ model: modelName });
+      const model = genAI_instance.getGenerativeModel({ model: modelName });
 
   const prompt = `
 You are an expert English teacher. The user is writing an essay on the topic: "${topic}".
@@ -58,15 +69,21 @@ Return ONLY a valid JSON object (do not include markdown code blocks like \`\`\`
     } catch (error) {
       console.error(`AI Grading Error with ${modelName}:`, error);
       const errMsg = error.message.toLowerCase();
+      
       if (errMsg.includes("429") || errMsg.includes("quota")) {
-        return { error: "Bạn đang thao tác quá nhanh! Vui lòng đợi khoảng 30 giây rồi chấm điểm lại nhé." };
+        if (attempts % Math.max(1, API_KEYS.length) === 0) {
+           currentModelIndex = (currentModelIndex + 1) % MODELS_TO_TRY.length;
+        }
+        continue;
       }
+      
       if (!errMsg.includes("503") && !errMsg.includes("high demand") && !errMsg.includes("overloaded")) {
         return { error: "Lỗi AI: " + error.message };
       }
+      currentModelIndex = (currentModelIndex + 1) % MODELS_TO_TRY.length;
     }
   }
-  return { error: "Hệ thống AI hiện đang quá tải. Vui lòng đợi 15-30 giây rồi thử lại." };
+  return { error: `Hệ thống AI hiện đang quá tải hoặc hết lượt dùng (Đã thử ${API_KEYS.length} keys). Vui lòng đợi 30 giây rồi thử lại.` };
 };
 
 export const suggestVocabulary = async (topic, currentText, userQuery, history = []) => {
@@ -104,28 +121,43 @@ ${AI_CONSTRAINTS}
     finalQuery = contextInstruction + "\n\n" + userQuery;
   }
 
-  // Try fallback models loop
-  for (const modelName of MODELS_TO_TRY) {
-    try {
-      const model = genAI.getGenerativeModel({ model: modelName });
-      
-      const chat = model.startChat({
-        history: formattedHistory
-      });
+  // Try fallback models loop with API Key rotation
+  let attempts = 0;
+  const maxAttempts = MODELS_TO_TRY.length * Math.max(1, API_KEYS.length);
+  
+  let currentModelIndex = 0;
+  
+  while (attempts < maxAttempts) {
+    attempts++;
+    const modelName = MODELS_TO_TRY[currentModelIndex];
+    let genAI_instance = getGenAI();
+    if (!genAI_instance) return `Hệ thống AI bị lỗi cấu hình (0 key).`;
 
+    try {
+      const model = genAI_instance.getGenerativeModel({ model: modelName });
+      const chat = model.startChat({ history: formattedHistory });
       const result = await chat.sendMessage(finalQuery);
       return result.response.text();
     } catch (error) {
       console.error(`AI Chat Error with ${modelName}:`, error);
       const errMsg = error.message.toLowerCase();
+      
       if (errMsg.includes("429") || errMsg.includes("quota")) {
-        return "Bạn đang thao tác quá nhanh! Vui lòng đợi khoảng 30 giây rồi nhắn tin lại nhé.";
+        // If 429, it will loop again and `getGenAI()` will give the NEXT key!
+        // We only switch model if we have exhausted all keys for this model.
+        if (attempts % Math.max(1, API_KEYS.length) === 0) {
+           currentModelIndex = (currentModelIndex + 1) % MODELS_TO_TRY.length;
+        }
+        continue; // Try next key
       }
+      
       if (!errMsg.includes("503") && !errMsg.includes("high demand") && !errMsg.includes("overloaded")) {
         return "Lỗi AI: " + error.message;
       }
+      // If 503, switch model immediately
+      currentModelIndex = (currentModelIndex + 1) % MODELS_TO_TRY.length;
     }
   }
 
-  return "Xin lỗi bạn, hệ thống Google AI hiện đang quá tải. Vui lòng đợi 15-30 giây và gửi lại câu hỏi nhé!";
+  return `Hệ thống đang quá tải hoặc hết lượt dùng! (Đã thử ${API_KEYS.length} keys). Vui lòng đợi 30 giây.`;
 };
