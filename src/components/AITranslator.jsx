@@ -24,7 +24,7 @@ export default function AITranslator() {
         prompt = `Bạn là một công cụ dịch thuật chính xác tuyệt đối như Cambridge Dictionary. Hãy dịch đoạn văn tiếng Anh sau sang tiếng Việt: Dịch bám sát SÁT NGHĨA đen của từng từ và nguyên câu, giữ nguyên giọng văn gốc, không tự ý thêm thắt. NẾU đoạn tiếng Anh gốc bị sai ngữ pháp cơ bản, hãy âm thầm tự hiểu ý người viết để dịch cho đúng nghĩa, sau đó GHI CHÚ lỗi sai đó ở cuối cùng để người dùng học hỏi:\n\n"${sourceText}"\n\nCHỈ TRẢ VỀ ĐOẠN VĂN ĐÃ DỊCH (KÈM GHI CHÚ LỖI NẾU CÓ), KHÔNG GIẢI THÍCH GÌ THÊM.`;
       }
 
-      let translated = "Lỗi khi dịch. Vui lòng thử lại.";
+      let translated = "Hệ thống AI hiện đang quá tải. Vui lòng đợi 15-30 giây rồi thử lại nhé.";
       for (const modelName of MODELS_TO_TRY) {
         try {
           const model = genAI.getGenerativeModel({ model: modelName });
@@ -32,7 +32,12 @@ export default function AITranslator() {
           translated = result.response.text();
           break; // success
         } catch (err) {
-          if (!err.message.includes("503") && !err.message.includes("429") && !err.message.includes("high demand")) {
+          const errMsg = err.message.toLowerCase();
+          if (errMsg.includes("429") || errMsg.includes("quota")) {
+            translated = "Bạn đang thao tác quá nhanh! Vui lòng đợi khoảng 30 giây rồi thử lại nhé.";
+            break; // Stop trying other models if rate limited
+          }
+          if (!errMsg.includes("503") && !errMsg.includes("high demand") && !errMsg.includes("overloaded")) {
             throw err;
           }
         }
@@ -41,7 +46,7 @@ export default function AITranslator() {
       setTargetText(translated);
     } catch (error) {
       console.error(error);
-      setTargetText("Đã xảy ra lỗi khi dịch: " + error.message);
+      setTargetText("Lỗi không mong muốn: " + error.message);
     } finally {
       setIsLoading(false);
     }

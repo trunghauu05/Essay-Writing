@@ -1,10 +1,15 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import AI_CONSTRAINTS from "../../AI_RULES.md?raw";
-const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+const keysString = import.meta.env.VITE_GEMINI_API_KEY || "";
+const API_KEYS = keysString.split(',').map(k => k.trim()).filter(k => k.length > 0);
+let currentKeyIndex = 0;
 
 export const getGenAI = () => {
+  if (API_KEYS.length === 0) return null;
   try {
-    return new GoogleGenerativeAI(API_KEY);
+    const key = API_KEYS[currentKeyIndex];
+    currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
+    return new GoogleGenerativeAI(key);
   } catch (e) {
     console.error("Lỗi khởi tạo AI:", e);
     return null;
@@ -52,13 +57,16 @@ Return ONLY a valid JSON object (do not include markdown code blocks like \`\`\`
       return JSON.parse(jsonStr);
     } catch (error) {
       console.error(`AI Grading Error with ${modelName}:`, error);
-      // If it's a 503 or 429, we let the loop try the next model
-      if (!error.message.includes("503") && !error.message.includes("429") && !error.message.includes("high demand")) {
+      const errMsg = error.message.toLowerCase();
+      if (errMsg.includes("429") || errMsg.includes("quota")) {
+        return { error: "Bạn đang thao tác quá nhanh! Vui lòng đợi khoảng 30 giây rồi chấm điểm lại nhé." };
+      }
+      if (!errMsg.includes("503") && !errMsg.includes("high demand") && !errMsg.includes("overloaded")) {
         return { error: "Lỗi AI: " + error.message };
       }
     }
   }
-  return { error: "Máy chủ AI hiện đang quá tải. Vui lòng thử lại sau vài giây." };
+  return { error: "Hệ thống AI hiện đang quá tải. Vui lòng đợi 15-30 giây rồi thử lại." };
 };
 
 export const suggestVocabulary = async (topic, currentText, userQuery, history = []) => {
@@ -109,12 +117,15 @@ ${AI_CONSTRAINTS}
       return result.response.text();
     } catch (error) {
       console.error(`AI Chat Error with ${modelName}:`, error);
-      // If it's a 503 or 429, try the next model in the list
-      if (!error.message.includes("503") && !error.message.includes("429") && !error.message.includes("high demand")) {
+      const errMsg = error.message.toLowerCase();
+      if (errMsg.includes("429") || errMsg.includes("quota")) {
+        return "Bạn đang thao tác quá nhanh! Vui lòng đợi khoảng 30 giây rồi nhắn tin lại nhé.";
+      }
+      if (!errMsg.includes("503") && !errMsg.includes("high demand") && !errMsg.includes("overloaded")) {
         return "Lỗi AI: " + error.message;
       }
     }
   }
 
-  return "Xin lỗi bạn, máy chủ Google AI hiện đang quá tải (High Demand). Vui lòng đợi vài giây và gửi lại câu hỏi nhé!";
+  return "Xin lỗi bạn, hệ thống Google AI hiện đang quá tải. Vui lòng đợi 15-30 giây và gửi lại câu hỏi nhé!";
 };
