@@ -4,7 +4,6 @@ import { doc, setDoc, getDoc, collection, writeBatch } from 'firebase/firestore'
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import EssayEditor from './components/EssayEditor';
 import ChatAssistant from './components/ChatAssistant';
-import AITranslator from './components/AITranslator';
 import Auth from './components/Auth';
 import EssayDashboard from './components/EssayDashboard';
 import { LogOut, Play, ChevronLeft, Lock, Unlock } from 'lucide-react';
@@ -238,14 +237,7 @@ function App() {
 
         <div className="right-panel">
           {isTopicLocked ? (
-            <Split 
-              sizes={[60, 40]} 
-              minSize={[200, 150]} 
-              gutterSize={8}
-              direction="vertical" 
-              className="split-vertical"
-            >
-              <div className="chat-container">
+              <div className="chat-container" style={{ height: '100%' }}>
                 <ChatAssistant 
                   ref={chatAssistantRef}
                   topic={topic} 
@@ -254,10 +246,6 @@ function App() {
                   setChatHistory={setChatHistory}
                 />
               </div>
-              <div style={{ height: '100%', width: '100%', borderRadius: '0.5rem', overflow: 'hidden' }}>
-                <AITranslator />
-              </div>
-            </Split>
           ) : (
             <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
               Chờ nạp đề bài...
